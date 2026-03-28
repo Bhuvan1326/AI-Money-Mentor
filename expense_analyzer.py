@@ -1,4 +1,3 @@
-# expense_analyzer.py — Spending stress signals + coaching tips (offline)
 """Flags overspending, low savings, high EMI; returns structured suggestions."""
 
 from __future__ import annotations

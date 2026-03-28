@@ -18,6 +18,7 @@ class MoneyHealthResult:
     investment_intensity_pct: float  # SIP / income
     debt_ratio_pct: float  # EMI / income
     breakdown: dict[str, float]
+    context: str = "single"  # "single" | "couple" (for UI labels only)
 
 
 def money_health_band(score: float) -> str:
@@ -31,6 +32,8 @@ def money_health_band(score: float) -> str:
 def calculate_money_health(
     profile: UserFinancialProfile,
     emergency_months: int = 6,
+    *,
+    context: str = "single",
 ) -> MoneyHealthResult:
     """
     Score from four pillars (each 0–100 sub-score, weighted):
@@ -72,6 +75,7 @@ def calculate_money_health(
         "investment_pillar": round(s_inv, 1),
         "debt_pillar": round(s_debt, 1),
     }
+    ctx = "couple" if context == "couple" else "single"
     return MoneyHealthResult(
         score=score,
         band=band,
@@ -80,4 +84,5 @@ def calculate_money_health(
         investment_intensity_pct=round(inv_pct, 2),
         debt_ratio_pct=round(dti, 2),
         breakdown=breakdown,
+        context=ctx,
     )

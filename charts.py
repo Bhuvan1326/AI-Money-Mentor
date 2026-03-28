@@ -134,6 +134,31 @@ def fig_wealth_sip_horizons(
     return fig
 
 
+def fig_income_share_pie(partner_a_label: str, income_a: float, income_b: float) -> go.Figure:
+    """Household income contribution pie (two earners)."""
+    a, b = max(0.0, float(income_a)), max(0.0, float(income_b))
+    if a + b <= 0:
+        a, b = 1.0, 0.0
+    fig = go.Figure(
+        data=[
+            go.Pie(
+                labels=[partner_a_label, "Partner B"],
+                values=[a, b],
+                hole=0.45,
+                marker=dict(colors=["#4f46e5", "#06b6d4"]),
+                textinfo="label+percent",
+            )
+        ]
+    )
+    fig.update_layout(
+        title="Income contribution (household)",
+        template="plotly_white",
+        height=340,
+        margin=dict(l=20, r=20, t=50, b=20),
+    )
+    return fig
+
+
 def fig_monthly_breakdown(labels: list[str], values: list[float]) -> go.Figure:
     """Donut chart for income/expense or allocation."""
     fig = go.Figure(

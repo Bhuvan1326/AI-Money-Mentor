@@ -17,8 +17,9 @@ from financial_calculator import (
     india_tax_saving_suggestions,
     monthly_savings_rate,
 )
+from couple_mode import CoupleAdviceBundle
 from financial_score import calculate_money_health
-from risk_profile import detect_risk_profile_v2
+from risk_profile import RiskProfileOutcome, detect_risk_profile_v2
 from utils import format_inr, sanitize_chat_input
 
 
@@ -52,15 +53,23 @@ class ProfileSnapshot:
     fire_number: float
 
 
-def _snapshot(profile: UserFinancialProfile) -> ProfileSnapshot:
+def _snapshot(
+    profile: UserFinancialProfile,
+    couple_bundle: CoupleAdviceBundle | None = None,
+) -> ProfileSnapshot:
     income = float(profile.monthly_income)
     exp = float(profile.monthly_expenses)
     surplus = max(0.0, income - exp)
     sr = monthly_savings_rate(income, exp)
     emi = float(profile.existing_debt_emi)
     dti = (emi / income * 100.0) if income > 0 else 0.0
-    health = calculate_money_health(profile)
-    risk = detect_risk_profile_v2(profile)
+    health = calculate_money_health(
+        profile,
+        context="couple" if couple_bundle is not None else "single",
+    )
+    risk: RiskProfileOutcome = (
+        couple_bundle.risk if couple_bundle is not None else detect_risk_profile_v2(profile)
+    )
     emer = emergency_fund_recommendation(profile)
     ret = full_retirement_plan(profile)
     ytr = max(1, int(profile.retirement_age) - int(profile.age))
@@ -91,18 +100,39 @@ def _snapshot(profile: UserFinancialProfile) -> ProfileSnapshot:
     )
 
 
-def _tailored_preamble(s: ProfileSnapshot) -> str:
-    """Opening line grounded in the user's numbers."""
+def _tailored_preamble(
+    s: ProfileSnapshot,
+    couple_bundle: CoupleAdviceBundle | None = None,
+) -> str:
+    """Opening line grounded in single or joint household numbers."""
     parts: list[str] = []
-    parts.append(
-        f"Based on your profile (age **{s.age}**, income **{format_inr(s.monthly_income)}/month**, "
-        f"expenses **{format_inr(s.monthly_expenses)}**, SIP **{format_inr(s.sip)}**, EMI **{format_inr(s.emi)}**):"
-    )
-    parts.append(
-        f"- **Money health score:** {s.health_score:.0f}/100 — **{s.health_band}**.\n"
-        f"- **Savings rate:** {s.savings_rate_pct:.1f}% of income.\n"
-        f"- **Risk profile:** **{s.risk_label}** — allocation template **{s.equity_pct}% equity**, **{s.debt_pct}% debt**, **{s.gold_pct}% gold**."
-    )
+    if couple_bundle is not None:
+        m = couple_bundle.meta
+        parts.append(
+            f"**Joint household** — Partner A (**{m.partner_a_age}** y, **{format_inr(m.partner_a_income)}/mo**), "
+            f"Partner B (**{m.partner_b_age}** y, **{format_inr(m.partner_b_income)}/mo**). "
+            f"Income mix **{m.share_a_pct:.1f}%** / **{m.share_b_pct:.1f}%**."
+        )
+        parts.append(
+            f"**Combined:** income **{format_inr(m.total_income)}/mo**, expenses **{format_inr(m.total_expenses)}/mo**, "
+            f"net flow **{format_inr(m.monthly_surplus_flow)}/mo**, SIP **{format_inr(m.total_sip)}**, EMI **{format_inr(m.total_emi)}**, "
+            f"liquid **{format_inr(m.liquid_corpus)}**. First retirement milestone in **~{m.years_to_first_retirement}** yrs (Partner **{m.first_retirer}**)."
+        )
+        parts.append(
+            f"- **Couple Money Health Score:** **{s.health_score:.0f}/100** — **{s.health_band}**.\n"
+            f"- **Household savings rate:** {s.savings_rate_pct:.1f}% of income.\n"
+            f"- **Couple risk:** **{s.risk_label}** — **{s.equity_pct}% equity**, **{s.debt_pct}% debt**, **{s.gold_pct}% gold**."
+        )
+    else:
+        parts.append(
+            f"Based on your profile (age **{s.age}**, income **{format_inr(s.monthly_income)}/month**, "
+            f"expenses **{format_inr(s.monthly_expenses)}**, SIP **{format_inr(s.sip)}**, EMI **{format_inr(s.emi)}**):"
+        )
+        parts.append(
+            f"- **Money health score:** {s.health_score:.0f}/100 — **{s.health_band}**.\n"
+            f"- **Savings rate:** {s.savings_rate_pct:.1f}% of income.\n"
+            f"- **Risk profile:** **{s.risk_label}** — allocation template **{s.equity_pct}% equity**, **{s.debt_pct}% debt**, **{s.gold_pct}% gold**."
+        )
     if s.emi_to_income_pct >= 40:
         parts.append(
             f"- **Debt load:** EMI is about **{s.emi_to_income_pct:.0f}%** of income — prioritize reducing high-cost debt alongside investing."
@@ -339,7 +369,12 @@ _HANDLERS: dict[str, Callable[[ProfileSnapshot, UserFinancialProfile], str]] = {
 # ---------------------------------------------------------------------------
 
 
-def get_offline_advice(profile: UserFinancialProfile, question: str) -> str:
+def get_offline_advice(
+    profile: UserFinancialProfile,
+    question: str,
+    *,
+    couple_bundle: CoupleAdviceBundle | None = None,
+) -> str:
     """
     Main entry: personalized, topic-aware markdown answer.
     Uses rules + financial_calculator outputs — no external services.
@@ -348,10 +383,10 @@ def get_offline_advice(profile: UserFinancialProfile, question: str) -> str:
     if not cleaned:
         return "Please enter a question so I can tailor guidance to your profile."
 
-    s = _snapshot(profile)
+    s = _snapshot(profile, couple_bundle=couple_bundle)
     topics = _detect_topics(cleaned)
 
-    sections: list[str] = [_tailored_preamble(s)]
+    sections: list[str] = [_tailored_preamble(s, couple_bundle=couple_bundle)]
 
     if topics:
         for topic in topics[:4]:  # avoid huge replies
@@ -361,17 +396,38 @@ def get_offline_advice(profile: UserFinancialProfile, question: str) -> str:
     else:
         sections.append(_section_general(s, profile, cleaned))
 
+    if couple_bundle is not None:
+        sections.append(
+            "### Couple playbook\n\n"
+            + "\n".join(f"- {line}" for line in couple_bundle.advice_lines)
+        )
+
     sections.append(
         "\n---\n*Figures are illustrative. Not investment, tax, or legal advice.*"
     )
     return "\n\n".join(sections)
 
 
-def generate_step_by_step_plan(profile: UserFinancialProfile) -> str:
+def generate_step_by_step_plan(
+    profile: UserFinancialProfile,
+    *,
+    couple_bundle: CoupleAdviceBundle | None = None,
+) -> str:
     """12-month plan: dynamic steps from savings ratio, EMI, emergency gap, risk."""
-    s = _snapshot(profile)
+    s = _snapshot(profile, couple_bundle=couple_bundle)
     emer = emergency_fund_recommendation(profile)
     steps: list[str] = []
+
+    if couple_bundle is not None:
+        m = couple_bundle.meta
+        steps.append(
+            f"**Household alignment:** Document joint income (**{format_inr(m.total_income)}**), fixed expenses, "
+            f"and EMIs — agree on minimum **6×** monthly household expense as emergency corpus."
+        )
+        steps.append(
+            "**Two-earner playbook:** Maximize employer **PF / NPS**, tag **SIPs** (Partner A vs B) for traceability, "
+            "and review term cover on **both** lives annually."
+        )
 
     if s.emergency_gap > 0:
         steps.append(
@@ -407,6 +463,10 @@ def generate_step_by_step_plan(profile: UserFinancialProfile) -> str:
     steps.append(
         "**Tax (India):** Use **80C** (ELSS/PPF/EPF), **80D** (health), optional **NPS 80CCD(1B)** — compare **old vs new** regime."
     )
+    if couple_bundle is not None:
+        steps.append(
+            "**Couple tax:** Place **80C/80D/NPS** where marginal rate is higher (rules permitting) — validate with a **CA**."
+        )
     steps.append(
         "**Insurance:** Term life if dependents; **health cover** ≥ reasonable sum insured for your city/hospital costs."
     )
@@ -414,17 +474,22 @@ def generate_step_by_step_plan(profile: UserFinancialProfile) -> str:
         "**Quarterly review:** Revisit **SIP amount**, **EMI prepayments**, and **allocation**; rebalance yearly."
     )
 
-    numbered = "\n".join(f"{i + 1}. {txt}" for i, txt in enumerate(steps[:10]))
+    numbered = "\n".join(f"{i + 1}. {txt}" for i, txt in enumerate(steps[:12]))
     return f"### Your 12-month roadmap\n\n{numbered}\n\n---\n*Educational only — not personalized professional advice.*"
 
 
-def explain_strategy_simple(topic: str, profile: UserFinancialProfile) -> str:
+def explain_strategy_simple(
+    topic: str,
+    profile: UserFinancialProfile,
+    *,
+    couple_bundle: CoupleAdviceBundle | None = None,
+) -> str:
     """Longer explanation for a free-text topic; reuses same engine + extra prose."""
     cleaned = sanitize_chat_input(topic, max_len=2000)
     if not cleaned:
         return "Enter a topic (e.g. SIP, ELSS, FIRE)."
-    s = _snapshot(profile)
-    base = get_offline_advice(profile, cleaned)
+    s = _snapshot(profile, couple_bundle=couple_bundle)
+    base = get_offline_advice(profile, cleaned, couple_bundle=couple_bundle)
     # Add a short “how this applies to you” closing
     closing = (
         f"\n\n### Your takeaway\n\n"

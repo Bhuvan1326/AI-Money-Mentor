@@ -1,4 +1,3 @@
-# financial_calculator.py — Core financial logic (India-focused)
 """SIP, retirement, FIRE, health score, risk, emergency fund, tax hints, goals."""
 
 from __future__ import annotations

@@ -14,6 +14,7 @@ Personal financial planning web app for the **ET AI Hackathon**: calculators, In
 - **Monthly surplus allocation** breakdown
 - **Plotly charts**: wealth projection, SIP horizons, portfolio scenarios, savings analysis
 - **AI advisor** (`offline_ai.py`): chat, 12-month plan, simple explanations — **fully offline**
+- **Couple Mode**: Partner A + B inputs → combined household profile, joint health score, couple risk rules, income-split pie, joint goals, combined budget & retirement tabs
 
 ## Setup
 
@@ -49,6 +50,9 @@ Open the URL shown in the terminal (usually `http://localhost:8501`).
 | `budget_engine.py` | 50/30/20 budget table & vs-actual insights |
 | `expense_analyzer.py` | Overspend / EMI / savings flags |
 | `personality.py` | Saver / Spender / Investor heuristic |
+| `joint_calculator.py` | Merge partners → one `UserFinancialProfile` + household meta |
+| `couple_mode.py` | Couple risk heuristics + `CoupleAdviceBundle` for the offline advisor |
+| `couple_planner.py` | Joint milestones (house / education / retirement corpus SIPs) |
 | `utils.py` | Formatting and helpers |
 
 ## Disclaimer
